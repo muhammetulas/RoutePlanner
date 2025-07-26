@@ -100,8 +100,8 @@ RoutePlanner, elektrikli araçlar için gelişmiş rota planlama ve şarj istasy
 ### 🥇 Faz 1: Temel Altyapı (4 hafta)
 - [x] Proje kurulumu ve repository yapılandırması
 - [x] Backend API temel yapısı
-- [ ] Veritabanı şeması tasarımı
-- [ ] Authentication sistemi
+- [x] Veritabanı şeması tasarımı
+- [x] Authentication sistemi
 - [ ] Temel web frontend kurulumu
 - [ ] Harita entegrasyonu
 

@@ -1,0 +1,390 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [postgis]
+}
+
+// User Model - Kullanıcı bilgileri
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  firstName String
+  lastName  String
+  phone     String?
+  avatar    String?
+  
+  // Authentication & Security
+  role              String   @default("user") // user, admin
+  isActive          Boolean  @default(true)
+  isEmailVerified   Boolean  @default(false)
+  emailVerifiedAt   DateTime?
+  emailVerifyToken  String?
+  resetPasswordToken String?
+  resetPasswordExpires DateTime?
+  lastLoginAt       DateTime?
+  
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Relations
+  vehicles     Vehicle[]
+  routes       Route[]
+  trips        Trip[]
+  reservations Reservation[]
+  reviews      Review[]
+  analytics    Analytics[]
+  
+  // Indexes
+  @@map("users")
+}
+
+// Vehicle Model - Elektrikli araç profilleri
+model Vehicle {
+  id       String @id @default(cuid())
+  userId   String
+  
+  // Vehicle Details
+  make          String  // Tesla, BMW, Nissan
+  model         String  // Model 3, i3, Leaf
+  year          Int
+  trim          String? // Standard, Performance, etc.
+  color         String?
+  licensePlate  String?
+  
+  // Battery & Range Information
+  batteryCapacity    Float   // kWh
+  maxRange           Int     // km
+  efficiency         Float   // kWh/100km
+  currentBatteryLevel Float? @default(100) // percentage
+  
+  // Charging Information
+  maxChargingSpeed   Float?  // kW
+  supportedConnectors String[] // Type2, CCS, CHAdeMO
+  
+  // Status
+  isActive    Boolean @default(true)
+  isPrimary   Boolean @default(false)
+  
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Relations
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  routes Route[]
+  trips  Trip[]
+  
+  // Indexes
+  @@index([userId])
+  @@map("vehicles")
+}
+
+// ChargingStation Model - Şarj istasyonu bilgileri (PostGIS)
+model ChargingStation {
+  id          String @id @default(cuid())
+  externalId  String? @unique // External API ID
+  
+  // Basic Information
+  name        String
+  description String?
+  operator    String? // ChargePoint, Tesla, etc.
+  
+  // Location Information (PostGIS)
+  location    Unsupported("geography(POINT, 4326)")
+  latitude    Float
+  longitude   Float
+  address     String?
+  city        String?
+  state       String?
+  country     String    @default("TR")
+  postalCode  String?
+  
+  // Charging Information
+  connectorTypes     String[] // Type2, CCS, CHAdeMO
+  maxPower          Float?   // kW
+  numberOfConnectors Int      @default(1)
+  
+  // Pricing
+  pricePerKwh       Float?
+  parkingFee        Float?
+  connectionFee     Float?
+  
+  // Availability & Status
+  isOperational     Boolean   @default(true)
+  is24Hours         Boolean   @default(false)
+  openingHours      String?   // JSON format
+  amenities         String[]  // WiFi, Restaurant, Shopping
+  
+  // Quality & Rating
+  averageRating     Float?    @default(0)
+  totalReviews      Int       @default(0)
+  
+  // Timestamps
+  lastUpdated       DateTime  @default(now())
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  
+  // Relations
+  reservations      Reservation[]
+  reviews           Review[]
+  routeStations     RouteChargingStation[]
+  
+  // Indexes
+  @@index([latitude, longitude])
+  @@index([city])
+  @@index([operator])
+  @@index([isOperational])
+  @@map("charging_stations")
+}
+
+// Route Model - Rota planlama verileri
+model Route {
+  id        String @id @default(cuid())
+  userId    String
+  vehicleId String
+  
+  // Route Information
+  name          String?
+  startLocation Unsupported("geography(POINT, 4326)")
+  endLocation   Unsupported("geography(POINT, 4326)")
+  startAddress  String
+  endAddress    String
+  
+  // Route Details
+  totalDistance     Float    // km
+  estimatedDuration Int      // minutes
+  totalEnergyNeeded Float    // kWh
+  routeGeometry     String?  // Encoded polyline
+  
+  // Planning Parameters
+  departureTime     DateTime?
+  arrivalTime       DateTime?
+  maxDetour         Float?   @default(10) // km
+  preferredConnectors String[]
+  
+  // Status
+  status           String   @default("planned") // planned, active, completed, cancelled
+  isOptimized      Boolean  @default(false)
+  isFavorite       Boolean  @default(false)
+  isPublic         Boolean  @default(false)
+  
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Relations
+  user             User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vehicle          Vehicle                @relation(fields: [vehicleId], references: [id])
+  chargingStations RouteChargingStation[]
+  trips            Trip[]
+  
+  // Indexes
+  @@index([userId])
+  @@index([vehicleId])
+  @@index([status])
+  @@map("routes")
+}
+
+// RouteChargingStation Model - Rota üzerindeki şarj istasyonları
+model RouteChargingStation {
+  id                String @id @default(cuid())
+  routeId           String
+  chargingStationId String
+  
+  // Stop Information
+  stopOrder         Int     // Order in route
+  arrivalBattery    Float   // Battery percentage on arrival
+  departureBattery  Float   // Battery percentage after charging
+  chargingDuration  Int     // minutes
+  estimatedCost     Float?  // TL
+  
+  // Timestamps
+  createdAt DateTime @default(now())
+  
+  // Relations
+  route           Route           @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  chargingStation ChargingStation @relation(fields: [chargingStationId], references: [id])
+  
+  // Indexes
+  @@unique([routeId, chargingStationId])
+  @@index([routeId, stopOrder])
+  @@map("route_charging_stations")
+}
+
+// Reservation Model - Şarj rezervasyonları
+model Reservation {
+  id                String @id @default(cuid())
+  userId            String
+  chargingStationId String
+  
+  // Reservation Details
+  startTime         DateTime
+  endTime           DateTime
+  connectorType     String
+  estimatedEnergy   Float?  // kWh
+  
+  // Status
+  status            String  @default("pending") // pending, confirmed, cancelled, completed, no_show
+  cancellationReason String?
+  
+  // Pricing
+  totalCost         Float?
+  paidAt            DateTime?
+  paymentMethod     String? // credit_card, cash, app
+  
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Relations
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chargingStation ChargingStation @relation(fields: [chargingStationId], references: [id])
+  
+  // Indexes
+  @@index([userId])
+  @@index([chargingStationId])
+  @@index([startTime])
+  @@index([status])
+  @@map("reservations")
+}
+
+// Review Model - Kullanıcı yorumları
+model Review {
+  id                String @id @default(cuid())
+  userId            String
+  chargingStationId String
+  
+  // Review Content
+  rating            Int     // 1-5
+  title             String?
+  comment           String?
+  
+  // Review Details
+  chargingSpeed     Int?    // 1-5
+  accessibility     Int?    // 1-5
+  cleanliness       Int?    // 1-5
+  location          Int?    // 1-5
+  
+  // Metadata
+  isVerified        Boolean @default(false)
+  isHelpful         Int     @default(0)
+  
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Relations
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chargingStation ChargingStation @relation(fields: [chargingStationId], references: [id])
+  
+  // Indexes
+  @@index([userId])
+  @@index([chargingStationId])
+  @@index([rating])
+  @@map("reviews")
+}
+
+// Trip Model - Gerçekleşen yolculuklar
+model Trip {
+  id        String @id @default(cuid())
+  userId    String
+  vehicleId String
+  routeId   String?
+  
+  // Trip Information
+  name              String?
+  startLocation     Unsupported("geography(POINT, 4326)")
+  endLocation       Unsupported("geography(POINT, 4326)")
+  startAddress      String
+  endAddress        String
+  
+  // Trip Details
+  actualDistance    Float    // km
+  actualDuration    Int      // minutes
+  energyConsumed    Float    // kWh
+  averageSpeed      Float?   // km/h
+  
+  // Battery Information
+  startBattery      Float    // percentage
+  endBattery        Float    // percentage
+  
+  // Charging Information
+  totalChargingTime Int?     // minutes
+  totalChargingCost Float?   // TL
+  chargingStops     Int      @default(0)
+  
+  // Trip Metrics
+  efficiency        Float?   // kWh/100km
+  co2Saved          Float?   // kg
+  costSaved         Float?   // TL compared to gas
+  
+  // Status
+  status            String   @default("completed") // in_progress, completed, cancelled
+  
+  // Timestamps
+  startedAt         DateTime
+  completedAt       DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  // Relations
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vehicle Vehicle  @relation(fields: [vehicleId], references: [id])
+  route   Route?   @relation(fields: [routeId], references: [id])
+  
+  // Indexes
+  @@index([userId])
+  @@index([vehicleId])
+  @@index([startedAt])
+  @@index([status])
+  @@map("trips")
+}
+
+// Analytics Model - Analitik veriler
+model Analytics {
+  id     String @id @default(cuid())
+  userId String
+  
+  // Period
+  period     String   // daily, weekly, monthly, yearly
+  periodStart DateTime
+  periodEnd   DateTime
+  
+  // Metrics
+  totalTrips        Int     @default(0)
+  totalDistance     Float   @default(0) // km
+  totalDuration     Int     @default(0) // minutes
+  totalEnergyUsed   Float   @default(0) // kWh
+  totalCost         Float   @default(0) // TL
+  totalCo2Saved     Float   @default(0) // kg
+  averageEfficiency Float   @default(0) // kWh/100km
+  
+  // Charging Statistics
+  totalChargingSessions Int   @default(0)
+  totalChargingTime     Int   @default(0) // minutes
+  totalChargingCost     Float @default(0) // TL
+  averageChargingSpeed  Float @default(0) // kW
+  
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Indexes
+  @@unique([userId, period, periodStart])
+  @@index([userId])
+  @@index([periodStart])
+  @@map("analytics")
+}
