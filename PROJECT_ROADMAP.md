@@ -102,7 +102,7 @@ RoutePlanner, elektrikli araçlar için gelişmiş rota planlama ve şarj istasy
 - [x] Backend API temel yapısı
 - [x] Veritabanı şeması tasarımı
 - [x] Authentication sistemi
-- [ ] Temel web frontend kurulumu
+- [x] Temel web frontend kurulumu
 - [ ] Harita entegrasyonu
 
 ### 🥈 Faz 2: Çekirdek Özellikler (6 hafta)
